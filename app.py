@@ -7,17 +7,17 @@ import os
 app = Flask(__name__)
 CORS(app)
 
-# Environment Variables থেকে কীগুলো নেওয়া হচ্ছে
+# Environment Variables থেকে কীগুলো নেওয়া
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
 
-# AI কনফিগারেশন
+# এপিআই কনফিগারেশন
 if GEMINI_API_KEY:
     genai.configure(api_key=GEMINI_API_KEY)
 if GROQ_API_KEY:
     groq_client = Groq(api_key=GROQ_API_KEY)
 
-# Gemini লাইভ সার্চ মডেল
+# Gemini মডেল সেটিংস (লাইভ সার্চ টুলসহ)
 gemini_model = genai.GenerativeModel(
     model_name='gemini-1.5-flash',
     tools=[{"google_search_retrieval": {}}]
@@ -25,7 +25,7 @@ gemini_model = genai.GenerativeModel(
 
 @app.route('/')
 def home():
-    return "Dibakar AI Backend is Live with Environment Variables!"
+    return "Dibakar AI Hybrid Engine is Live!"
 
 @app.route('/ask', methods=['POST'])
 def ask_ai():
@@ -36,19 +36,35 @@ def ask_ai():
         return jsonify({"error": "No query found"}), 400
 
     try:
-        # ১. Llama ড্রাফট
+        # ধাপ ১: Llama 3.1 8B থেকে ড্রাফট নেওয়া (Max Tokens: 150)
         llama_response = groq_client.chat.completions.create(
-            messages=[{"role": "user", "content": user_query}],
-            model="llama-3.1-8b-instant", 
+            messages=[{"role": "user", "content": f"Provide a technical draft for: {user_query}"}],
+            model="llama-3.1-8b-instant",
+            max_tokens=150
         )
-        draft_info = llama_response.choices[0].message.content
+        llama_draft = llama_response.choices[0].message.content
 
-        # ২. Gemini লাইভ সার্চ
-        prompt = f"ইউজারের প্রশ্ন: {user_query}\nপ্রাথমিক তথ্য: {draft_info}\nগুগল সার্চ ব্যবহার করে সঠিক উত্তর দাও।"
+        # ধাপ ২: Gemini-কে ইনস্ট্রাকশন দেওয়া (Live Data + Knowledge Blend)
+        # এখানে ভাষার কথা বলা হয়েছে যাতে ইউজার যে ভাষায় প্রশ্ন করবে সেভাবেই উত্তর আসে
+        prompt = (
+            f"User Question: {user_query}\n"
+            f"Llama's Knowledge: {llama_draft}\n\n"
+            "Instructions:\n"
+            "1. Use your internal knowledge and Llama's draft to understand the topic.\n"
+            "2. Use GOOGLE SEARCH to get the latest live data and facts.\n"
+            "3. Answer in the SAME LANGUAGE as the User's Question.\n"
+            "4. Make the language VERY EASY and simple to understand.\n"
+            "5. Keep the total answer under 300 words.\n"
+            "6. At the end, provide a 'Sources' section with website links used for search."
+        )
+        
         gemini_output = gemini_model.generate_content(prompt)
         
+        # সোর্স এবং টেক্সট আলাদা করা
+        final_answer = gemini_output.text
+        
         return jsonify({
-            "answer": gemini_output.text,
+            "answer": final_answer,
             "status": "success"
         })
 
